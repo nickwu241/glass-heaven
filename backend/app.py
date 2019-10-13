@@ -15,8 +15,13 @@ LOAD_COMPANIES_FUNCTION_URL = 'https://us-central1-easy-companies-overview.cloud
 
 
 @app.route('/')
-def index(path):
-    return 'Hello World'
+def index():
+    return send_from_directory('./dist/', 'index.html')
+
+
+@app.route('/<path:path>', methods=['GET'])
+def static_proxy(path):
+    return send_from_directory('./dist/', path)
 
 
 @app.route('/companies', methods=['GET', 'POST'])

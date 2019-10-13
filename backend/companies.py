@@ -30,7 +30,7 @@ def write_soup(filename, soup):
 
 
 def get_linkedin_url(company):
-    r = requests.get(f'https://www.google.com/search?q={company}+linkedin')
+    r = requests.get('https://www.google.com/search?q={}+linkedin'.format(company))
     soup = BeautifulSoup(r.text, 'html.parser')
     write_soup(f'{company}_google_linkedin.html', soup)
     for a in soup.find_all('a'):
