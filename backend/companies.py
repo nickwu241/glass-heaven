@@ -94,7 +94,11 @@ def get_overview_data(soup):
         value_text = div.find('span').text.strip()
         info[label_text] = value_text
 
-    keys = ('Website', 'Headquarters', 'Part of', 'Size', 'Founded', 'Type', 'Industry', 'Revenue', 'Competitors')
+    img = soup.select_one('span.sqLogo.tighten.lgSqLogo.logoOverlay img')
+    info['Logo URL'] = img.get('src', '')
+
+    keys = ('Website', 'Headquarters', 'Part of', 'Size', 'Founded',
+            'Type', 'Industry', 'Revenue', 'Competitors', 'Logo URL')
     if len(info) > len(keys):
         unexpected_keys = info.keys() - set(keys)
         print('[FAIL ASSERT] unexpected keys for company "{}": {}'.format(info['Website'], unexpected_keys))
@@ -116,7 +120,7 @@ def scrape_companies_data(companies=[], use_cache=False, n=float('inf'), skip_co
     output_data = [
         [
             'Name', 'Rating', 'Review Counts', 'Website', 'Headquarters', 'Part of',
-            'Size', 'Founded', 'Type', 'Industry', 'Revenue', 'Competitors',
+            'Size', 'Founded', 'Type', 'Industry', 'Revenue', 'Competitors', 'Logo URL',
             'Overview URL', 'Reviews URL', 'LinkedIn URL',
         ]
     ]
@@ -218,7 +222,7 @@ def post_process(lines):
         part_of = split.pop(5)
         if part_of != 'Unknown':
             if split[7] != 'Subsidiary or Business Segment':
-                print(f'[FAIL ASSERT] split[7] != "Subsidiary or Business Segment"\n{line}')
+                print(f'[FAIL ASSERT] split[7] != "Subsidiary or Business Segment"\n{split}')
             split[7] = f'Subsidiary of {part_of}'
         elif split[7] == 'Subsidiary or Business Segment':
             split[7] = 'Subsidiary'
@@ -255,7 +259,7 @@ def get_intern_supply(use_cache=True):
 
 
 if __name__ == '__main__':
-    with open('companies_input.txt') as f:
+    with open('intern_supply_input.txt') as f:
         companies = [l.strip() for l in f.readlines()]
     parser = argparse.ArgumentParser()
     parser.add_argument('-c', '--use-cache', action='store_true')

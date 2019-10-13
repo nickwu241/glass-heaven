@@ -2,7 +2,7 @@
 import csv
 from init_firestore import db
 
-SHOULD_SKIP_EXISTS = True
+SHOULD_SKIP_EXISTS = False
 
 with open('companies_output_post.tsv') as tsvfile:
     reader = csv.reader(tsvfile, delimiter='\t')
