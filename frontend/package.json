@@ -1,12 +1,12 @@
 {
-  "name": "easy_companies_overview",
+  "name": "glass-heaven",
   "version": "1.0.0",
-  "description": "Easy Companies Overview",
+  "description": "Glass Heaven",
   "author": "Nick Wu",
   "private": true,
   "scripts": {
     "dev": "nuxt",
-    "build": "BASE_URL='' nuxt build",
+    "build": "nuxt build",
     "start": "nuxt start",
     "generate": "nuxt generate",
     "lint": "eslint --ext .js,.vue --ignore-path .gitignore ."

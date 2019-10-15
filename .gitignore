@@ -1,6 +1,17 @@
+# Local editor settings
 .vscode
+
+# Terraform
 .terraform
+*.tfstate*
+
+# Python
+__pycache__
 *.pyc
-gce-sa-secret.json
+
+# Build output
 dist/
+
+# Secrets
+gce-sa-secret.json
 backend/easy-companies-overview-firebase-adminsdk-7idn2-520e664df3.json
