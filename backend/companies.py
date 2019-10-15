@@ -14,25 +14,55 @@ optional arguments:
 
 import argparse
 from time import sleep
+import os
 import re
 import sys
 
 import requests
 from bs4 import BeautifulSoup
 
+CACHE_FOLDER = '.scrape-cache'
+os.makedirs(CACHE_FOLDER, exist_ok=True)
 LINKEDIN_URL_RE = re.compile(r'https://www.linkedin.com/company/\w+/')
 
 
 def write_soup(filename, soup):
     # errors='surrogatepass' for non UTF-8 characters: e.g. Salesforce
-    with open(filename, 'w', errors='surrogatepass') as f:
+    filepath = os.path.join(CACHE_FOLDER, filename)
+    with open(filepath, 'w', errors='surrogatepass') as f:
         f.write(str(soup))
 
 
+def open_soup_from_file(filename):
+    filepath = os.path.join(CACHE_FOLDER, filename)
+    with open(filepath) as f:
+        return BeautifulSoup(f.read(), 'html.parser')
+    raise ValueError(f'Error opening {filename} does not exist')
+
+
+def get_soup(url, cached_filename=None):
+    request_headers = {
+        'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/42.0.2311.135 Safari/537.36 Edge/12.246'
+    }
+    response = requests.get(url, headers=request_headers)
+
+    soup = BeautifulSoup(response.text, 'html.parser')
+    if cached_filename:
+        write_soup(cached_filename, soup)
+    return soup
+
+
+def get_google_search_soup(query):
+    query = query.replace(' ', '+')
+    query_underscore_separated = query.replace('+', ' ').lower()
+    return get_soup(
+        f'https://www.google.com/search?q={query}',
+        cached_filename=f'google_{query_underscore_separated}.html'
+    )
+
+
 def get_linkedin_url(company):
-    r = requests.get('https://www.google.com/search?q={}+linkedin'.format(company))
-    soup = BeautifulSoup(r.text, 'html.parser')
-    write_soup(f'{company}_google_linkedin.html', soup)
+    soup = get_google_search_soup(f'{company}+linkedin')
     for a in soup.find_all('a'):
         url = a['href']
         match = LINKEDIN_URL_RE.search(url)
@@ -41,7 +71,7 @@ def get_linkedin_url(company):
     return 'Unknown'
 
 
-def get_url(company):
+def get_glassdoor_urls(company):
     company_dash_separated = company.replace(' ', '-')
 
     def find_links_from_a_elements(all_a):
@@ -64,20 +94,13 @@ def get_url(company):
 
         return overview_url, reviews_url
 
-    r = requests.get(f'https://www.google.com/search?q={company}+glassdoor')
-    soup = BeautifulSoup(r.text, 'html.parser')
-    write_soup(f'{company}_google_1.html', soup)
+    soup = get_google_search_soup(f'{company}+glassdor')
     overview_url, reviews_url = find_links_from_a_elements(soup.find_all('a'))
     if overview_url is None:
-        r = requests.get(f'https://www.google.com/search?q={company}+overview+glassdoor')
-        soup = BeautifulSoup(r.text, 'html.parser')
-        write_soup(f'{company}_google_overview.html', soup)
+        soup = get_google_search_soup(f'{company}+overview+glassdor')
         overview_url, _ = find_links_from_a_elements(soup.find_all('a'))
-
     if reviews_url is None:
-        r = requests.get(f'https://www.google.com/search?q={company}+reviews+glassdoor')
-        soup = BeautifulSoup(r.text, 'html.parser')
-        write_soup(f'{company}_google_reviews.html', soup)
+        soup = get_google_search_soup(f'{company}+reviews+glassdor')
         _, reviews_url = find_links_from_a_elements(soup.find_all('a'))
 
     if overview_url is None or reviews_url is None:
@@ -124,35 +147,23 @@ def scrape_companies_data(companies=[], use_cache=False, n=float('inf'), skip_co
             'Overview URL', 'Reviews URL', 'LinkedIn URL',
         ]
     ]
-    request_headers = {
-        'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/42.0.2311.135 Safari/537.36 Edge/12.246'
-    }
     for i, company in enumerate(companies):
         try:
             if company in skip_companies:
                 print('[SKIP]', company)
                 continue
-            print('[INFO]', company)
-            overview_url, reviews_url = get_url(company)
+
+            overview_url, reviews_url = get_glassdoor_urls(company)
             print('[INFO]', company, overview_url, reviews_url)
             if i > n:
                 break
 
             elif use_cache:
-                with open(f'{company}_reviews.html') as f:
-                    reviews_soup = BeautifulSoup(f.read(), 'html.parser')
-
-                with open(f'{company}_overview.html') as f:
-                    overview_soup = BeautifulSoup(f.read(), 'html.parser')
+                reviews_soup = open_soup_from_file(f'{company}_reviews.html')
+                overview_soup = open_soup_from_file(f'{company}_overview.html')
             else:
-                reviews_r = requests.get(reviews_url, headers=request_headers)
-                reviews_soup = BeautifulSoup(reviews_r.text, 'html.parser')
-                write_soup(f'{company}_reviews.html', reviews_soup)
-
-                overview_r = requests.get(overview_url, headers=request_headers)
-                overview_soup = BeautifulSoup(overview_r.text, 'html.parser')
-                write_soup(f'{company}_overview.html', overview_soup)
-                # sleep(0.5)
+                reviews_soup = get_soup(reviews_url, cached_filename=f'{company}_reviews.html')
+                overview_soup = get_soup(overview_url, cached_filename=f'{company}_overviews.html')
 
             reviews_data = get_reviews_data(reviews_soup)
             overview_data = get_overview_data(overview_soup)
