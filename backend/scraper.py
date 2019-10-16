@@ -37,7 +37,7 @@ def get_linkedin_url(
 
 
 def get_glassdoor_urls(company: str) -> Tuple[str, str]:
-    """Returns the Glassdoor overview and reviews URLs respectively."""
+    """Returns the Glassdoor overview and reviews URLs respectively, None if not found."""
     def find_links_from_a_elements(all_a):
         overview_url = reviews_url = None
         for a in all_a:
@@ -66,9 +66,6 @@ def get_glassdoor_urls(company: str) -> Tuple[str, str]:
         soup = __get_google_search_soup(f'{company}+reviews+glassdor')
         _, reviews_url = find_links_from_a_elements(soup.find_all('a'))
 
-    if overview_url is None or reviews_url is None:
-        raise Exception(f'Cannot find both URLs for "{company}": {overview_url} {reviews_url}')
-
     return overview_url, reviews_url
 
 
@@ -87,7 +84,8 @@ def get_overview_data(soup: BeautifulSoup) -> Dict[str, str]:
             'Type', 'Industry', 'Revenue', 'Competitors', 'Logo URL')
     if len(info) > len(keys):
         unexpected_keys = info.keys() - set(keys)
-        print('[FAIL ASSERT] unexpected keys for company "{}": {}'.format(info['Website'], unexpected_keys))
+        website = info['Website']
+        print(f'[FAIL ASSERT] unexpected keys for company "{website}": {unexpected_keys}')
 
     for key in keys:
         if key not in info:

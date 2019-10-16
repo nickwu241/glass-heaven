@@ -15,29 +15,37 @@ optional arguments:
 import argparse
 import os
 import sys
-
+from typing import List, Set, Tuple
 
 import scraper
+import transformers
 from models import Company, FailedCompanyError
-from transformers import write_to_tsv_output, post_process
 
 
-def scrape_companies_data(companies=[], use_cache=False, n=float('inf'), skip_companies=set()):
+def scrape_companies_data(
+    company_names: List[str],
+    use_cache: bool = False,
+    n: int = float('inf'),
+    skip_companies: Set[str] = set()
+) -> Tuple[List[Company], List[FailedCompanyError]]:
     errors = []
     output_data = []
 
-    for i, company_name in enumerate(companies):
-        try:
-            if i >= n:
-                break
+    for i, company_name in enumerate(company_names):
+        if i >= n:
+            break
 
-            if company_name in skip_companies:
-                print('[SKIP]', company_name)
-                continue
+        if company_name in skip_companies:
+            print(f'[INFO] Skip scraping {company_name}')
+            continue
+
+        try:
             company_id = company_name.replace(' ', '_').lower()
             company = Company(id=company_id)
             overview_url, reviews_url = scraper.get_glassdoor_urls(company_name)
             print('[INFO]', company_name, overview_url, reviews_url)
+            if overview_url is None or reviews_url is None:
+                raise Exception(f'Cannot find both URLs for "{company_name}": {overview_url} {reviews_url}')
 
             reviews_data = scraper.scrape(
                 reviews_url, f'{company_name}_reviews.html', scraper.get_reviews_data)
@@ -63,7 +71,7 @@ def scrape_companies_data(companies=[], use_cache=False, n=float('inf'), skip_co
     return output_data, errors
 
 
-def print_failed_companies_errors(errors):
+def print_failed_companies_errors(errors: List[FailedCompanyError]) -> None:
     if errors:
         print('------------')
         print('| FAILURES |')
@@ -86,9 +94,9 @@ if __name__ == '__main__':
     #              'Juniper', 'Kayak', 'LastPass', 'MailChimp', 'Medium', 'NextCapital', 'Nvidia', 'Occipital', 'Palantir', 'Pandora', 'Playstation', 'Priceline', 'Quora', 'RedHat', 'Sensus', 'Sift Science', 'StateFarm', 'Tableau', 'Usaa', 'Valve', 'Vizio', 'Walt Disney', 'Zappos', 'Zurb']
     # companies = ['AppDynamics']
     output_data, errors = scrape_companies_data(
-        companies=companies, use_cache=args.use_cache, n=args.n_companies,
+        company_names=companies, use_cache=args.use_cache, n=args.n_companies,
     )
-    write_to_tsv_output(output_data, filename='companies_output_raw.tsv')
-    post_process(output_data)
-    write_to_tsv_output(output_data, filename='companies_output_post.tsv')
+    transformers.write_to_tsv_output(output_data, filename='companies_output_raw.tsv')
+    transformers.post_process(output_data)
+    transformers.write_to_tsv_output(output_data, filename='companies_output_post.tsv')
     print_failed_companies_errors(errors)
