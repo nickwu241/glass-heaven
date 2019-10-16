@@ -8,44 +8,18 @@ CACHE_FOLDER = '.scrape-cache'
 os.makedirs(CACHE_FOLDER, exist_ok=True)
 
 
-def write_soup(filename, soup):
-    # errors='surrogatepass' for non UTF-8 characters: e.g. Salesforce
-    filepath = os.path.join(CACHE_FOLDER, filename)
-    with open(filepath, 'w', errors='surrogatepass') as f:
-        f.write(str(soup))
-
-
-def open_soup_from_file(filename):
-    filepath = os.path.join(CACHE_FOLDER, filename)
-    with open(filepath) as f:
-        return BeautifulSoup(f.read(), 'html.parser')
-    raise ValueError(f'Error opening {filename} does not exist')
-
-
-def get_soup(url, cached_filename=None):
-    request_headers = {
-        'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/42.0.2311.135 Safari/537.36 Edge/12.246'
-    }
-    response = requests.get(url, headers=request_headers)
-
-    soup = BeautifulSoup(response.text, 'html.parser')
-    if cached_filename:
-        write_soup(cached_filename, soup)
-    return soup
-
-
 def scrape(url, cached_filename, callback, use_cache=False):
     if use_cache:
-        soup = open_soup_from_file(cached_filename)
+        soup = __read_soup_from_file(cached_filename)
     else:
-        soup = get_soup(url, cached_filename=cached_filename)
+        soup = __get_soup(url, cached_filename=cached_filename)
     return callback(soup)
 
 
 def get_google_search_soup(query):
     query = query.replace(' ', '+')
     query_underscore_separated = query.replace('+', '_').lower()
-    return get_soup(
+    return __get_soup(
         f'https://www.google.com/search?q={query}',
         cached_filename=f'google_{query_underscore_separated}.html'
     )
@@ -101,3 +75,29 @@ def get_intern_supply(use_cache=True):
             print(p.text.strip())
 
     scrape('intern_supp.html', 'intern_supply.html', print_companies)
+
+
+def __write_soup(filename, soup):
+    # errors='surrogatepass' for non UTF-8 characters: e.g. Salesforce
+    filepath = os.path.join(CACHE_FOLDER, filename)
+    with open(filepath, 'w', errors='surrogatepass') as f:
+        f.write(str(soup))
+
+
+def __read_soup_from_file(filename):
+    filepath = os.path.join(CACHE_FOLDER, filename)
+    with open(filepath) as f:
+        return BeautifulSoup(f.read(), 'html.parser')
+    raise ValueError(f'Error opening {filename} does not exist')
+
+
+def __get_soup(url, cached_filename=None):
+    request_headers = {
+        'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/42.0.2311.135 Safari/537.36 Edge/12.246'
+    }
+    response = requests.get(url, headers=request_headers)
+
+    soup = BeautifulSoup(response.text, 'html.parser')
+    if cached_filename:
+        __write_soup(cached_filename, soup)
+    return soup
