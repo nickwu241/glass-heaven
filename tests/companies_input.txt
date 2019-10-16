@@ -1,0 +1,40 @@
+Airbnb
+Asana
+Lyft
+Riot Games
+Slack
+Square
+Stripe
+Twitch
+Uber
+Google
+Microsoft
+Facebook
+Apple
+Amazon
+Adobe
+Affirm
+DocuSign
+Etsy
+Figma
+GitHub
+Hulu
+Jane Street
+Lever
+LinkedIn
+Mailchimp
+MongoDB
+Mozilla
+Okta
+Palantir Technologies
+Quora Inc
+Reddit
+Salesforce
+SendGrid
+Tableau Software
+Twilio
+Twitter
+WhatsApp
+Workday
+Yelp
+Zillow

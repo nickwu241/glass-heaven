@@ -13,7 +13,6 @@ optional arguments:
 """
 
 import argparse
-from time import sleep
 import os
 import re
 import sys
@@ -21,9 +20,11 @@ import sys
 import requests
 from bs4 import BeautifulSoup
 
+from models import Company, FailedCompanyError
+from transformers import write_to_tsv_output, post_process
+
 CACHE_FOLDER = '.scrape-cache'
 os.makedirs(CACHE_FOLDER, exist_ok=True)
-LINKEDIN_URL_RE = re.compile(r'https://www.linkedin.com/company/\w+/')
 
 
 def write_soup(filename, soup):
@@ -52,45 +53,49 @@ def get_soup(url, cached_filename=None):
     return soup
 
 
+def scrape(url, cached_filename, callback, use_cache=False):
+    if use_cache:
+        soup = open_soup_from_file(cached_filename)
+    else:
+        soup = get_soup(url, cached_filename=cached_filename)
+    return callback(soup)
+
+
 def get_google_search_soup(query):
     query = query.replace(' ', '+')
-    query_underscore_separated = query.replace('+', ' ').lower()
+    query_underscore_separated = query.replace('+', '_').lower()
     return get_soup(
         f'https://www.google.com/search?q={query}',
         cached_filename=f'google_{query_underscore_separated}.html'
     )
 
 
-def get_linkedin_url(company):
+def get_linkedin_url(company, linkedin_url_re=re.compile(r'https://www.linkedin.com/company/\w+/')):
     soup = get_google_search_soup(f'{company}+linkedin')
     for a in soup.find_all('a'):
-        url = a['href']
-        match = LINKEDIN_URL_RE.search(url)
+        url = a.get('href', '')
+        match = linkedin_url_re.search(url)
         if match:
             return match.group(0)
-    return 'Unknown'
+    return None
 
 
 def get_glassdoor_urls(company):
-    company_dash_separated = company.replace(' ', '-')
-
     def find_links_from_a_elements(all_a):
         overview_url = reviews_url = None
         for a in all_a:
             if overview_url and reviews_url:
                 break
 
-            url = a['href']
-            if not url.startswith('/url?q') or ('glassdoor.com/' not in url and 'glassdoor.ca/' not in url):
+            url = a.get('href', '')
+            if ('glassdoor.com/' not in url and 'glassdoor.ca/' not in url):
                 continue
 
-            if 'Overview' in url or (a.find('div') and a.find('div').text.strip().startswith('Working at')):
-                clean_url = url.lstrip('/url?q=').split('&')[0]
-                overview_url = clean_url
+            if not overview_url and 'Overview' in url or (a.find('div') and a.find('div').text.strip().startswith('Working at')):
+                overview_url = url
 
-            if 'Reviews' in url and 'Employee-Review' not in url and f'{company_dash_separated}-Reviews-E' in url:
-                clean_url = url.lstrip('/url?q=').split('&')[0]
-                reviews_url = clean_url
+            if not reviews_url and 'Reviews' in url and 'Employee-Review' not in url:
+                reviews_url = url
 
         return overview_url, reviews_url
 
@@ -104,7 +109,7 @@ def get_glassdoor_urls(company):
         _, reviews_url = find_links_from_a_elements(soup.find_all('a'))
 
     if overview_url is None or reviews_url is None:
-        raise Exception(f'Cannot find both URLs for {company}: {overview_url} {reviews_url}')
+        raise Exception(f'Cannot find both URLs for "{company}": {overview_url} {reviews_url}')
 
     return overview_url, reviews_url
 
@@ -126,7 +131,10 @@ def get_overview_data(soup):
         unexpected_keys = info.keys() - set(keys)
         print('[FAIL ASSERT] unexpected keys for company "{}": {}'.format(info['Website'], unexpected_keys))
 
-    return [info.get(key, 'Unknown') for key in keys]
+    for key in keys:
+        if key not in info:
+            info[key] = None
+    return info
 
 
 def get_reviews_data(soup):
@@ -135,142 +143,71 @@ def get_reviews_data(soup):
     rating = div.find(
         'div', class_='common__EIReviewsRatingsStyles__ratingNum').text.strip()
     # Rating, Review Counts
-    return [rating, review_counts]
+    return {'rating': rating, 'review_counts': review_counts}
 
 
 def scrape_companies_data(companies=[], use_cache=False, n=float('inf'), skip_companies=set()):
-    failed_companies = []
-    output_data = [
-        [
-            'Name', 'Rating', 'Review Counts', 'Website', 'Headquarters', 'Part of',
-            'Size', 'Founded', 'Type', 'Industry', 'Revenue', 'Competitors', 'Logo URL',
-            'Overview URL', 'Reviews URL', 'LinkedIn URL',
-        ]
-    ]
-    for i, company in enumerate(companies):
-        try:
-            if company in skip_companies:
-                print('[SKIP]', company)
-                continue
+    errors = []
+    output_data = []
 
-            overview_url, reviews_url = get_glassdoor_urls(company)
-            print('[INFO]', company, overview_url, reviews_url)
-            if i > n:
+    for i, company_name in enumerate(companies):
+        try:
+            if i >= n:
                 break
 
-            elif use_cache:
-                reviews_soup = open_soup_from_file(f'{company}_reviews.html')
-                overview_soup = open_soup_from_file(f'{company}_overview.html')
-            else:
-                reviews_soup = get_soup(reviews_url, cached_filename=f'{company}_reviews.html')
-                overview_soup = get_soup(overview_url, cached_filename=f'{company}_overviews.html')
+            if company_name in skip_companies:
+                print('[SKIP]', company_name)
+                continue
+            company_id = company_name.replace(' ', '_').lower()
+            company = Company(id=company_id)
+            overview_url, reviews_url = get_glassdoor_urls(company_name)
+            print('[INFO]', company_name, overview_url, reviews_url)
 
-            reviews_data = get_reviews_data(reviews_soup)
-            overview_data = get_overview_data(overview_soup)
-            linkedin_data = [get_linkedin_url(company)]
-            output = [company] + reviews_data + overview_data + [overview_url, reviews_url] + linkedin_data
-            output_data.append(output)
+            reviews_data = scrape(reviews_url, f'{company_name}_reviews.html', get_reviews_data)
+            overview_data = scrape(overview_url, f'{company_name}_overview.html', get_overview_data)
+            data = {
+                'name': company_name,
+                'overview_url': overview_url,
+                'reviews_url': reviews_url,
+                'linkedin_url': get_linkedin_url(company_name),
+            }
+            data.update(reviews_data)
+            data.update(overview_data)
+            company.update_data(data)
+            output_data.append(company)
         except Exception as e:
-            print(f'[FAIL] unable to parse data for {company}')
-            exc_type, exc_obj, exc_tb = sys.exc_info()
-            failed_companies.append([company, e, exc_tb.tb_lineno])
+            print(f'[FAIL] caught exception when parsing "{company_name}"')
+            errors.append(FailedCompanyError(
+                company_name=company_name,
+                exception=e,
+            ))
 
-    return output_data, failed_companies
-
-
-def write_to_tsv_output(output_data, filename):
-    output_data_iter = iter(output_data)
-    tsv_lines = []
-    tsv_lines.append('\t'.join(next(output_data_iter)) + '\n')
-    for line in output_data_iter:
-        tsv_lines.append('\t'.join(line) + '\n')
-
-    with open(filename, 'w') as f:
-        f.writelines(tsv_lines)
-    print(f'[INFO] wrote data to {filename}')
+    return output_data, errors
 
 
-def print_failed_companies(failed_companies):
-    if failed_companies:
+def print_failed_companies_errors(errors):
+    if errors:
         print('------------')
         print('| FAILURES |')
         print('------------')
-        for company, error, lineno in failed_companies:
-            print(f'[FAIL company:{company}]')
-            print(error)
-            print(lineno)
-        print('[FAIL summary] failed to get data for:', [c[0] for c in failed_companies])
-
-
-def post_process(lines):
-    size_emoji = '😃'
-    # size_mapping = {
-    #     '1 to 50 employees': size_emoji,
-    #     '51 to 200 employees': size_emoji * 2,
-    #     '201 to 500 employees': size_emoji * 3,
-    #     '501 to 1000 employees': size_emoji * 4,
-    #     '1001 to 5000 employees': size_emoji * 5,
-    #     '5001 to 10000 employees': size_emoji * 6,
-    #     '10000+ employees': size_emoji * 7,
-    # }
-    type_mapping = {
-        r'Company - Private': r'Private',
-        r'Company - Public (\(\w+\))': r'Public \1'
-    }
-
-    output_lines = []
-    headers = lines.pop(0)
-    print(headers)
-    if headers[5] != 'Part of':
-        print(f'[FAIL ASSERT] headers[5] != "Part of"\n{headers[5]}')
-    if headers[8] != 'Type':
-        print(f'[FAIL ASSERT] headers[8] != "Type"\n{headers[8]}')
-
-    del headers[5]
-    output_lines.append(headers)
-
-    for split in lines:
-        part_of = split.pop(5)
-        if part_of != 'Unknown':
-            if split[7] != 'Subsidiary or Business Segment':
-                print(f'[FAIL ASSERT] split[7] != "Subsidiary or Business Segment"\n{split}')
-            split[7] = f'Subsidiary of {part_of}'
-        elif split[7] == 'Subsidiary or Business Segment':
-            split[7] = 'Subsidiary'
-
-        output_line = '\t'.join(split)
-        # for k, v in size_mapping.items():
-        #     if k in output_line:
-        #         output_line = output_line.replace(k, f'{v} {k}')
-        #         break
-
-        for k, v in type_mapping.items():
-            output_line = re.sub(k, v, output_line)
-
-        output_lines.append(output_line.split('\t'))
-    return output_lines
+        for e in errors:
+            print(f'[FAIL company:{e.company_name}]')
+            print(e)
+        print('[FAIL summary] failed to get data for:', [e.company_name for e in errors])
 
 
 def get_intern_supply(use_cache=True):
     if use_cache:
-        with open('intern_supply.html') as f:
-            soup = BeautifulSoup(f.read(), 'html.parser')
+        soup = open_soup_from_file('intern_supply.html')
     else:
-        r = requests.get('https://intern.supply/')
-        soup = BeautifulSoup(r.text, 'html.parser')
-        write_soup('intern_supply.html', soup)
+        soup = get_soup('https://intern.supply/', cached_filename='intern_supply.html')
 
     for p in soup.select('div.company-row p.title'):
         print(p.text.strip())
 
-    # company_rows = soup.find_all('div', class_='company-row')
-    # for row in company_rows:
-    #     title = row.find('p', class_='title').text.strip()
-    #     print(title)
-
 
 if __name__ == '__main__':
-    with open('intern_supply_input.txt') as f:
+    with open('../tests/companies_input.txt') as f:
         companies = [l.strip() for l in f.readlines()]
     parser = argparse.ArgumentParser()
     parser.add_argument('-c', '--use-cache', action='store_true')
@@ -278,13 +215,13 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     # get_intern_supply()
-    # companies = ['Lyft']
     # companies = ['A9', 'Akuna Capital', 'American Express', 'Beme', 'Bloomberg', 'Cisco', 'Cofense (PhishMe)', 'Cogo', 'Couple', 'DE Shaw', 'Drive.ai', 'DriveTime', 'Ebay', 'Fidelity', 'Flatiron', 'Github', 'HomeAway', 'Hp', 'Hubspot', 'Icims', 'Ideo', 'Industry Drive', 'Intel', 'JPMorgan',
     #              'Juniper', 'Kayak', 'LastPass', 'MailChimp', 'Medium', 'NextCapital', 'Nvidia', 'Occipital', 'Palantir', 'Pandora', 'Playstation', 'Priceline', 'Quora', 'RedHat', 'Sensus', 'Sift Science', 'StateFarm', 'Tableau', 'Usaa', 'Valve', 'Vizio', 'Walt Disney', 'Zappos', 'Zurb']
     # companies = ['AppDynamics']
-    output_data, failed_companies = scrape_companies_data(
+    output_data, errors = scrape_companies_data(
         companies=companies, use_cache=args.use_cache, n=args.n_companies,
     )
     write_to_tsv_output(output_data, filename='companies_output_raw.tsv')
-    write_to_tsv_output(post_process(output_data), filename='companies_output_post.tsv')
-    print_failed_companies(failed_companies)
+    post_process(output_data)
+    write_to_tsv_output(output_data, filename='companies_output_post.tsv')
+    print_failed_companies_errors(errors)
