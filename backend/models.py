@@ -20,6 +20,10 @@ class Company:
         'logo_url',
     ])
 
+    @property
+    def as_dict(self):
+        return self.dict
+
     def __init__(self, id):
         self.dict = {}
         self.dict['id'] = id
@@ -37,10 +41,6 @@ class Company:
 
     def __setitem__(self, key, value):
         return self.dict.__setitem__(key, value)
-
-    @property
-    def missing_fields(self):
-        pass
 
     def __str__(self):
         return self.dict.__str__()
