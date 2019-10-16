@@ -5,6 +5,9 @@
 - Get overviews using your own list of companies or,
 - See which popular companies people are curious about!
 
+![Home Page](screenshots/home.png "Home Page")
+![Search Page](screenshots/search.png "Search Page")
+
 ## Credits
 
 - Landing page image from [Undraw](https://undraw.co/).
