@@ -22,38 +22,6 @@ from models import Company, FailedCompanyError
 from transformers import write_to_tsv_output, post_process
 
 
-def get_overview_data(soup):
-    divs = soup.find_all('div', class_='infoEntity')
-    info = {}
-    for div in divs:
-        label_text = div.find('label').text.strip()
-        value_text = div.find('span').text.strip()
-        info[label_text] = value_text
-
-    img = soup.select_one('span.sqLogo.tighten.lgSqLogo.logoOverlay img')
-    info['Logo URL'] = img.get('src', '')
-
-    keys = ('Website', 'Headquarters', 'Part of', 'Size', 'Founded',
-            'Type', 'Industry', 'Revenue', 'Competitors', 'Logo URL')
-    if len(info) > len(keys):
-        unexpected_keys = info.keys() - set(keys)
-        print('[FAIL ASSERT] unexpected keys for company "{}": {}'.format(info['Website'], unexpected_keys))
-
-    for key in keys:
-        if key not in info:
-            info[key] = None
-    return info
-
-
-def get_reviews_data(soup):
-    div = soup.find('div', id='EmpStats')
-    review_counts = div.find('span', class_='count').text.strip()
-    rating = div.find(
-        'div', class_='common__EIReviewsRatingsStyles__ratingNum').text.strip()
-    # Rating, Review Counts
-    return {'rating': rating, 'review_counts': review_counts}
-
-
 def scrape_companies_data(companies=[], use_cache=False, n=float('inf'), skip_companies=set()):
     errors = []
     output_data = []
@@ -71,8 +39,10 @@ def scrape_companies_data(companies=[], use_cache=False, n=float('inf'), skip_co
             overview_url, reviews_url = scraper.get_glassdoor_urls(company_name)
             print('[INFO]', company_name, overview_url, reviews_url)
 
-            reviews_data = scraper.scrape(reviews_url, f'{company_name}_reviews.html', get_reviews_data)
-            overview_data = scraper.scrape(overview_url, f'{company_name}_overview.html', get_overview_data)
+            reviews_data = scraper.scrape(
+                reviews_url, f'{company_name}_reviews.html', scraper.get_reviews_data)
+            overview_data = scraper.scrape(
+                overview_url, f'{company_name}_overview.html', scraper.get_overview_data)
             data = {
                 'name': company_name,
                 'overview_url': overview_url,

@@ -1,6 +1,6 @@
 import os
 import re
-from typing import Callable, Tuple
+from typing import Callable, Dict, Tuple
 
 import requests
 from bs4 import BeautifulSoup
@@ -70,6 +70,38 @@ def get_glassdoor_urls(company: str) -> Tuple[str, str]:
         raise Exception(f'Cannot find both URLs for "{company}": {overview_url} {reviews_url}')
 
     return overview_url, reviews_url
+
+
+def get_overview_data(soup: BeautifulSoup) -> Dict[str, str]:
+    divs = soup.find_all('div', class_='infoEntity')
+    info = {}
+    for div in divs:
+        label_text = div.find('label').text.strip()
+        value_text = div.find('span').text.strip()
+        info[label_text] = value_text
+
+    img = soup.select_one('span.sqLogo.tighten.lgSqLogo.logoOverlay img')
+    info['Logo URL'] = img.get('src', '')
+
+    keys = ('Website', 'Headquarters', 'Part of', 'Size', 'Founded',
+            'Type', 'Industry', 'Revenue', 'Competitors', 'Logo URL')
+    if len(info) > len(keys):
+        unexpected_keys = info.keys() - set(keys)
+        print('[FAIL ASSERT] unexpected keys for company "{}": {}'.format(info['Website'], unexpected_keys))
+
+    for key in keys:
+        if key not in info:
+            info[key] = None
+    return info
+
+
+def get_reviews_data(soup: BeautifulSoup) -> Dict[str, str]:
+    div = soup.find('div', id='EmpStats')
+    review_counts = div.find('span', class_='count').text.strip()
+    rating = div.find(
+        'div', class_='common__EIReviewsRatingsStyles__ratingNum').text.strip()
+    # Rating, Review Counts
+    return {'rating': rating, 'review_counts': review_counts}
 
 
 def print_intern_supply_companies(use_cache: bool = True) -> None:
