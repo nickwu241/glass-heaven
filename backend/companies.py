@@ -25,7 +25,7 @@ from models import Company, FailedCompanyError
 def scrape_companies_data(
     company_names: List[str],
     use_cache: bool = False,
-    n: int = float('inf'),
+    n: int = 2147483647,
     skip_companies: Set[str] = set()
 ) -> Tuple[List[Company], List[FailedCompanyError]]:
     errors = []
