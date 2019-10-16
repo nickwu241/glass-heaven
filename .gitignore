@@ -1,3 +1,6 @@
+# Mac
+.DS_Store
+
 # Local editor settings
 .vscode
 
@@ -8,6 +11,7 @@
 # Python
 __pycache__
 *.pyc
+.scrape-cache
 
 # Build output
 dist/
